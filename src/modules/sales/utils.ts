@@ -1,0 +1,78 @@
+import type {
+  InvoiceFilters,
+  InvoiceItemDetail,
+  InvoiceStatus,
+  InvoiceSummary,
+} from "@/modules/sales/types";
+
+export function buildFilters(params: {
+  dateFrom: string;
+  dateTo: string;
+  customerSearch: string;
+  invoiceSearch: string;
+  status: string;
+  paymentMethod: string;
+  limit: number;
+  offset: number;
+}): InvoiceFilters {
+  return {
+    dateFrom: params.dateFrom || null,
+    dateTo: params.dateTo || null,
+    customerSearch: params.customerSearch.trim() || null,
+    invoiceSearch: params.invoiceSearch.trim() || null,
+    status: params.status || null,
+    paymentMethod: params.paymentMethod || null,
+    limit: params.limit,
+    offset: params.offset,
+  };
+}
+
+export function getStatusTone(status: InvoiceStatus) {
+  if (status === "paid") {
+    return "border-emerald-200 bg-emerald-100 text-emerald-800";
+  }
+
+  if (status === "deferred") {
+    return "border-orange-200 bg-orange-100 text-orange-800";
+  }
+
+  if (status === "partial") {
+    return "border-yellow-200 bg-yellow-100 text-yellow-800";
+  }
+
+  return "border-destructive/20 bg-destructive/10 text-destructive";
+}
+
+export function getRemainingMillieme(
+  invoice: Pick<InvoiceSummary, "total_millieme" | "paid_millieme">,
+) {
+  return Math.max(invoice.total_millieme - invoice.paid_millieme, 0);
+}
+
+export function getReturnableQty(
+  item: Pick<InvoiceItemDetail, "qty" | "returned_qty">,
+) {
+  return Math.max(item.qty - item.returned_qty, 0);
+}
+
+/**
+ * Refund owed for returning `returnedQty` units of an invoice line, based on
+ * what the customer actually paid. The line total is already net of the
+ * per-line discount; scaling by `invoiceTotal / invoiceSubtotal` prorates the
+ * invoice-level (global) discount and tax too. Prorated for partial returns;
+ * mirrors the backend's return_line_refund_millieme.
+ */
+export function getReturnLineRefundMillieme(
+  item: Pick<InvoiceItemDetail, "qty" | "total_millieme">,
+  returnedQty: number,
+  invoiceSubtotalMillieme: number,
+  invoiceTotalMillieme: number,
+) {
+  if (item.qty <= 0) {
+    return 0;
+  }
+  const denominator = item.qty * Math.max(invoiceSubtotalMillieme, 1);
+  return Math.round(
+    (item.total_millieme * returnedQty * invoiceTotalMillieme) / denominator,
+  );
+}

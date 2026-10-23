@@ -1,0 +1,510 @@
+import { useEffect, useMemo, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  CircleGauge,
+  Database,
+  Loader2,
+  Printer,
+  ReceiptText,
+  Save,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { parseAppError } from "@/modules/items/utils";
+import { DataImportSection } from "@/modules/settings/DataImportSection";
+import { BackupSection } from "@/modules/settings/BackupSection";
+import { printHtml } from "@/shared/utils/printHtml";
+import { tabLabels } from "@/modules/settings/constants";
+import {
+  Field,
+  ReceiptSizeOption,
+  Section,
+  StatTile,
+  ToggleField,
+} from "@/modules/settings/components/SettingPrimitives";
+import {
+  useDbSizeQuery,
+  usePrintersQuery,
+  useVacuumDatabaseMutation,
+} from "@/modules/settings/hooks";
+import type { TabId } from "@/modules/settings/types";
+import { formatBytes } from "@/modules/settings/utils";
+import UsersManagement from "@/modules/settings/users";
+import { useAuthStore } from "@/store/authSlice";
+import { readLogoBase64 } from "@/modules/sales/api";
+import { invoke } from "@/shared/utils/invoke";
+
+import { type SettingsValues, useSettings } from "../useSettings";
+
+export default function SettingsPage() {
+  const canAccessUsers = useAuthStore((state) => state.canAccess("users"));
+  const [activeTab, setActiveTab] = useState<TabId>("shop");
+  const { settings, setSettings, isLoading, isSaving, saveSettings } =
+    useSettings();
+
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
+
+  // Load a live preview of the saved logo path whenever it changes
+  useEffect(() => {
+    if (!settings.shopLogoPath) {
+      setLogoPreviewUrl("");
+      return;
+    }
+    let cancelled = false;
+    readLogoBase64(settings.shopLogoPath)
+      .then((dataUrl) => { if (!cancelled) setLogoPreviewUrl(dataUrl); })
+      .catch(() => { if (!cancelled) setLogoPreviewUrl(""); });
+    return () => { cancelled = true; };
+  }, [settings.shopLogoPath]);
+
+  const availableTabs = useMemo<TabId[]>(() => {
+    const tabs: TabId[] = ["shop", "printing", "invoices"];
+    if (canAccessUsers) {
+      tabs.push("users");
+    }
+    tabs.push("backup", "advanced");
+    return tabs;
+  }, [canAccessUsers]);
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab(availableTabs[0]);
+    }
+  }, [activeTab, availableTabs]);
+
+  const printersQuery = usePrintersQuery();
+
+  useEffect(() => {
+    if (printersQuery.error) {
+      toast.error(parseAppError(printersQuery.error).message_ar);
+    }
+  }, [printersQuery.error]);
+
+  const dbSizeQuery = useDbSizeQuery();
+
+  useEffect(() => {
+    if (dbSizeQuery.error) {
+      toast.error(parseAppError(dbSizeQuery.error).message_ar);
+    }
+  }, [dbSizeQuery.error]);
+
+  const vacuumMutation = useVacuumDatabaseMutation();
+
+  const saveCurrentSettings = async () => {
+    if (!settings.shopName.trim()) {
+      toast.error("اسم المحل مطلوب");
+      return;
+    }
+
+    await saveSettings(settings);
+  };
+
+  const handleSettingChange = <K extends keyof SettingsValues>(
+    key: K,
+    value: SettingsValues[K],
+  ) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleLogoSelect = async () => {
+    const selectedPath = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: "Images",
+          extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
+        },
+      ],
+    });
+
+    if (typeof selectedPath === "string") {
+      try {
+        // Copy the selected file into the persistent app-data logos directory.
+        // save_logo validates the type/size and returns the managed path.
+        const managedPath = await invoke<string>(
+          "save_logo",
+          { sourcePath: selectedPath },
+          { toast: false },
+        );
+        handleSettingChange("shopLogoPath", managedPath);
+      } catch (err: unknown) {
+        const msg =
+          err &&
+          typeof err === "object" &&
+          "message_ar" in err &&
+          typeof (err as { message_ar: string }).message_ar === "string"
+            ? (err as { message_ar: string }).message_ar
+            : "تعذر حفظ الشعار";
+        toast.error(msg);
+      }
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    try {
+      await invoke<boolean>("delete_logo", {}, { toast: false });
+    } catch {
+      // Non-fatal: the stored path will still be cleared from settings
+    }
+    handleSettingChange("shopLogoPath", "");
+    setLogoPreviewUrl("");
+  };
+
+  const handlePrintTest = () => {
+    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طباعة تجريبية</title><style>body{font-family:'Segoe UI',Tahoma,Arial;padding:20px;margin:0;direction:rtl;text-align:center}.header{margin-bottom:16px}.header h1{margin:0;font-size:20px}.line{border-top:1px dashed #333;margin:12px 0}.item{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}.total{font-weight:bold;font-size:15px;border-top:2px solid #333;padding-top:6px;margin-top:4px}.footer{margin-top:16px;font-size:12px;color:#888}</style></head><body><div class="header"><h1>${settings.shopName || "صفقة"}</h1><p>${settings.shopAddress || ""}</p><p>${settings.shopPhone || ""}</p><hr class="line"><p>طباعة تجريبية</p><p>${new Date().toLocaleDateString("ar-EG")}</p><hr class="line"><div class="item"><span>صنف تجريبي 1</span><span>١٠٫٠٠ ج.م</span></div><div class="item"><span>صنف تجريبي 2</span><span>٢٥٫٥٠ ج.م</span></div><hr class="line"><div class="total"><span>الإجمالي</span><span>٣٥٫٥٠ ج.م</span></div><div class="footer">شكراً لزيارتكم — طباعة تجريبية</div></body></html>`;
+    printHtml(html);
+    toast.success("تم إرسال طباعة تجريبية");
+  };
+
+  const selectedPrinter =
+    settings.defaultPrinter || printersQuery.data?.[0] || "";
+
+  useEffect(() => {
+    if (!settings.defaultPrinter && selectedPrinter) {
+      handleSettingChange("defaultPrinter", selectedPrinter);
+    }
+  }, [selectedPrinter]);
+
+  return (
+    <div className="space-y-6 p-6">
+      <header className="relative overflow-hidden rounded-3xl border border-border/70 bg-card px-6 py-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+          الإعدادات
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+          إعدادات التطبيق
+        </h1>
+        <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+          اضبط بيانات المحل والطباعة والفواتير والنسخ الاحتياطي من مكان واحد، مع
+          حفظ مباشر في قاعدة البيانات.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-2 rounded-2xl border bg-card p-2">
+        {availableTabs.map((tabId) => {
+          const isActive = activeTab === tabId;
+
+          return (
+            <Button
+              key={tabId}
+              type="button"
+              variant={isActive ? "default" : "outline"}
+              className="rounded-xl"
+              onClick={() => setActiveTab(tabId)}
+            >
+              {tabLabels[tabId]}
+            </Button>
+          );
+        })}
+      </div>
+
+      {activeTab === "shop" ? (
+        <Section
+          title="معلومات المحل"
+          action={
+            <Button
+              onClick={() => void saveCurrentSettings()}
+              disabled={isLoading || isSaving}
+            >
+              {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+              حفظ التغييرات
+            </Button>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="اسم المحل *"
+              value={settings.shopName}
+              onChange={(value) => handleSettingChange("shopName", value)}
+            />
+            <Field
+              label="رقم الهاتف"
+              value={settings.shopPhone}
+              onChange={(value) => handleSettingChange("shopPhone", value)}
+            />
+            <Field
+              label="العنوان"
+              value={settings.shopAddress}
+              onChange={(value) => handleSettingChange("shopAddress", value)}
+              className="md:col-span-2"
+            />
+
+            <div className="space-y-2 md:col-span-2">
+              <span className="block text-sm font-medium text-foreground">
+                شعار المعرض
+              </span>
+              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border/80 bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleLogoSelect()}
+                  >
+                    <Upload />
+                    اختيار صورة
+                  </Button>
+                  {settings.shopLogoPath ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleLogoRemove()}
+                    >
+                      <Trash2 />
+                      حذف الشعار
+                    </Button>
+                  ) : null}
+                  <span className="text-sm text-muted-foreground">
+                    {settings.shopLogoPath || "لم يتم اختيار ملف"}
+                  </span>
+                </div>
+                {logoPreviewUrl ? (
+                  <div className="flex items-center justify-center rounded-lg border bg-white p-3">
+                    <img
+                      src={logoPreviewUrl}
+                      alt="معاينة الشعار"
+                      style={{
+                        maxWidth: 160,
+                        maxHeight: 100,
+                        objectFit: "contain",
+                        display: "block",
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </Section>
+      ) : null}
+
+      {activeTab === "printing" ? (
+        <Section
+          title="الطباعة"
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handlePrintTest()}
+                disabled={isLoading || isSaving || printersQuery.isLoading}
+              >
+                <Printer />
+                طباعة تجريبية
+              </Button>
+              <Button
+                onClick={() => void saveCurrentSettings()}
+                disabled={isLoading || isSaving}
+              >
+                {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                حفظ
+              </Button>
+            </div>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-right md:col-span-2">
+              <span className="block text-sm font-medium text-foreground">
+                الطابعة الافتراضية
+              </span>
+              <Select
+                value={settings.defaultPrinter || "none"}
+                onValueChange={(value) =>
+                  handleSettingChange("defaultPrinter", value === "none" ? "" : value)
+                }
+                disabled={printersQuery.isLoading}
+              >
+                <SelectTrigger dir="rtl" className="h-10 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                  <SelectItem value="none">بدون</SelectItem>
+                  {printersQuery.data?.map((printer) => (
+                    <SelectItem key={printer} value={printer}>
+                      {printer}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+
+            <div className="space-y-3 md:col-span-2">
+              <span className="block text-sm font-medium text-foreground">
+                حجم الفاتورة
+              </span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ReceiptSizeOption
+                  label="كاملة (80mm)"
+                  value="full"
+                  checked={settings.receiptSize === "full"}
+                  onChange={() => handleSettingChange("receiptSize", "full")}
+                />
+                <ReceiptSizeOption
+                  label="مصغرة (58mm)"
+                  value="mini"
+                  checked={settings.receiptSize === "mini"}
+                  onChange={() => handleSettingChange("receiptSize", "mini")}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 md:col-span-2">
+              <span className="block text-sm font-medium text-foreground">
+                إظهار على الإيصال
+              </span>
+              <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-2">
+                <ToggleField
+                  label="إظهار اسم المحل"
+                  checked={settings.showShopNameOnReceipt}
+                  onChange={(checked) =>
+                    handleSettingChange("showShopNameOnReceipt", checked)
+                  }
+                />
+                <ToggleField
+                  label="إظهار العنوان"
+                  checked={settings.showShopAddressOnReceipt}
+                  onChange={(checked) =>
+                    handleSettingChange("showShopAddressOnReceipt", checked)
+                  }
+                />
+                <ToggleField
+                  label="إظهار رقم الهاتف"
+                  checked={settings.showShopPhoneOnReceipt}
+                  onChange={(checked) =>
+                    handleSettingChange("showShopPhoneOnReceipt", checked)
+                  }
+                />
+                <ToggleField
+                  label="إظهار رسالة الشكر"
+                  checked={settings.showThankYouOnReceipt}
+                  onChange={(checked) =>
+                    handleSettingChange("showThankYouOnReceipt", checked)
+                  }
+                />
+              </div>
+            </div>
+
+            <Field
+              label="رسالة الشكر"
+              value={settings.receiptThankYouMessage}
+              onChange={(value) =>
+                handleSettingChange("receiptThankYouMessage", value)
+              }
+              className="md:col-span-2"
+            />
+          </div>
+        </Section>
+      ) : null}
+
+      {activeTab === "invoices" ? (
+        <Section
+          title="الفواتير"
+          action={
+            <Button
+              onClick={() => void saveCurrentSettings()}
+              disabled={isLoading || isSaving}
+            >
+              {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+              حفظ
+            </Button>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="بادئة فاتورة البيع"
+              value={settings.invoicePrefix}
+              onChange={(value) => handleSettingChange("invoicePrefix", value)}
+            />
+            <Field
+              label="بادئة فاتورة الشراء"
+              value={settings.purchasePrefix}
+              onChange={(value) => handleSettingChange("purchasePrefix", value)}
+            />
+            <Field
+              label="بادئة المرتجعات"
+              value={settings.returnPrefix}
+              onChange={(value) => handleSettingChange("returnPrefix", value)}
+            />
+            <Field
+              label="نسبة الضريبة %"
+              type="number"
+              value={String(settings.taxPercent)}
+              onChange={(value) =>
+                handleSettingChange("taxPercent", Number(value || 0))
+              }
+            />
+            <ToggleField
+              label="تنبيه المخزون المنخفض"
+              checked={settings.lowStockAlert}
+              onChange={(checked) =>
+                handleSettingChange("lowStockAlert", checked)
+              }
+            />
+          </div>
+        </Section>
+      ) : null}
+
+      {activeTab === "users" && canAccessUsers ? <UsersManagement /> : null}
+
+      {activeTab === "backup" ? <BackupSection /> : null}
+
+      {activeTab === "advanced" ? (
+        <div className="space-y-6">
+          <DataImportSection />
+          <Section
+            title="متقدم"
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => void vacuumMutation.mutateAsync()}
+                  disabled={vacuumMutation.isPending}
+                >
+                  {vacuumMutation.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Database />
+                  )}
+                  تشغيل VACUUM
+                </Button>
+                <Button variant="outline" type="button" disabled>
+                  تصدير كل البيانات (CSV) - قريباً
+                </Button>
+              </div>
+            }
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <StatTile
+                icon={<CircleGauge className="size-4" />}
+                label="حجم ملف قاعدة البيانات"
+                value={
+                  dbSizeQuery.isLoading
+                    ? "جاري التحميل..."
+                    : dbSizeQuery.data != null
+                      ? formatBytes(dbSizeQuery.data)
+                      : "غير متاح"
+                }
+              />
+              <StatTile
+                icon={<ReceiptText className="size-4" />}
+                label="حالة الإعدادات"
+                value={isLoading ? "جاري التحميل..." : "جاهزة"}
+              />
+            </div>
+          </Section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
