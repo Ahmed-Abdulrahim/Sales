@@ -1,0 +1,53 @@
+
+name: Build Safqah Windows MSI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-msi:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Copy application icons
+        shell: pwsh
+        run: |
+          if (Test-Path "src-tauri/icons") {
+            New-Item -ItemType Directory -Force "public/icons" | Out-Null
+            Copy-Item "src-tauri/icons/*" "public/icons/" -Recurse -Force
+          }
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Windows MSI
+        run: npm run tauri -- build --bundles msi
+
+      - name: Upload MSI installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Safqah-Windows-MSI
+          path: src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14
