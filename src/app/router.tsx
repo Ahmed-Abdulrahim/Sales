@@ -34,6 +34,10 @@ export const router = createBrowserRouter([
         element: <LazyRoute loader={() => import("@/modules/sales")} />,
       },
       {
+        path: "invoices",
+        element: <LazyRoute loader={() => import("@/modules/sales")} />,
+      },
+      {
         path: "purchases",
         element: (
           <FeatureRoute feature="purchases">

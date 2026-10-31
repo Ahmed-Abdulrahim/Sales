@@ -80,7 +80,7 @@ export function InvoiceDetailSheet({
         invoiceNumber: invoice.invoice_number,
       });
 
-      toast.success("تم فتح واتساب، اختر جهة الاتصال ثم أرفق ملف PDF");
+      toast.success("تم فتح واتساب، اختر جهة الاتصال ثم أرفق ملف الفاتورة");
     } catch (error) {
       toast.error(parseAppError(error).message_ar);
     } finally {

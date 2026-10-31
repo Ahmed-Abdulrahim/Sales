@@ -106,7 +106,13 @@ export default function SettingsPage() {
       return;
     }
 
-    await saveSettings(settings);
+    try {
+      await saveSettings(settings);
+    } catch (err: unknown) {
+      // Log full error details to help diagnose the root cause
+      console.error("[SettingsPage] saveSettings failed:", err);
+      // The mutation's onError already shows a toast; don't double-toast here
+    }
   };
 
   const handleSettingChange = <K extends keyof SettingsValues>(

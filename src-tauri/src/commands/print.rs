@@ -276,6 +276,13 @@ pub async fn save_logo(
     let dest_name = format!("shop_logo.{ext}");
     let dest = logos_dir.join(&dest_name);
 
+    // If source is already the managed destination, skip the copy
+    let src_canonical = std::fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    let dest_canonical = std::fs::canonicalize(&dest).unwrap_or_else(|_| dest.clone());
+    if src_canonical == dest_canonical {
+        return Ok(dest.to_string_lossy().into_owned());
+    }
+
     // Remove any pre-existing managed logo with a different extension
     for other_ext in ["png", "jpg", "jpeg", "webp", "gif", "bmp"] {
         if other_ext != ext.as_str() {

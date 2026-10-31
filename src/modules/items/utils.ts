@@ -60,18 +60,37 @@ export function parseAppError(error: unknown): AppErrorShape {
     return error as AppErrorShape;
   }
 
+  // Also accept backend shape (code + message_ar without debugMessage)
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    "message_ar" in error
+  ) {
+    const e = error as Record<string, unknown>;
+    return {
+      code: String(e.code),
+      message_ar: String(e.message_ar),
+      debugMessage: e.message_en ? String(e.message_en) : String(e.debugMessage ?? ""),
+    };
+  }
+
   if (typeof error === "string") {
+    // Prefer the string value as the Arabic message if it looks Arabic
+    const isArabic = /[\u0600-\u06ff]/.test(error);
     return {
       code: "UNKNOWN",
-      message_ar: "حدث خطأ غير متوقع",
+      message_ar: isArabic ? error : "حدث خطأ غير متوقع",
       debugMessage: error,
     };
   }
 
   if (error instanceof Error) {
+    // Check if the Error wraps a structured backend error
+    const isArabic = /[\u0600-\u06ff]/.test(error.message);
     return {
       code: "UNKNOWN",
-      message_ar: "حدث خطأ غير متوقع",
+      message_ar: isArabic ? error.message : "حدث خطأ غير متوقع",
       debugMessage: error.message,
     };
   }

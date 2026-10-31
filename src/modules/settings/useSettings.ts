@@ -149,20 +149,25 @@ export function useSettings() {
 
   useEffect(() => {
     if (settingsQuery.error) {
+      console.error("[useSettings] get_settings failed:", settingsQuery.error);
       toast.error(parseAppError(settingsQuery.error).message_ar);
     }
   }, [settingsQuery.error]);
 
   const saveSettings = useMutation({
     mutationFn: async (next: SettingsValues) => {
+      // Guard: merge with defaults to ensure all string fields are defined.
+      // If any field is undefined, calling .trim() would throw a TypeError
+      // that surfaces as "حدث خطأ غير متوقع" instead of a useful message.
+      const safe: SettingsValues = { ...defaultSettings, ...next };
       await invoke<boolean>(
         "update_settings",
         {
-          updates: serializeSettings(next),
+          updates: serializeSettings(safe),
         },
         { toast: false },
       );
-      return next;
+      return safe;
     },
     onSuccess: async (next) => {
       setSettings(next);
@@ -170,7 +175,15 @@ export function useSettings() {
       toast.success("تم حفظ الإعدادات بنجاح");
     },
     onError: (error) => {
-      toast.error(parseAppError(error).message_ar);
+      console.error("[useSettings] update_settings failed:", error);
+      const appError = parseAppError(error);
+      // If only the generic message is available, append the debug detail so it
+      // is visible in the UI (helps diagnose the root cause during beta).
+      const display =
+        appError.code === "UNKNOWN" && appError.debugMessage
+          ? `${appError.message_ar} — ${appError.debugMessage}`
+          : appError.message_ar;
+      toast.error(display);
     },
   });
 
@@ -179,7 +192,7 @@ export function useSettings() {
     setSettings,
     isLoading: settingsQuery.isLoading,
     isSaving: saveSettings.isPending,
-    saveSettings: saveSettings.mutateAsync,
+    saveSettings: (next: SettingsValues) => saveSettings.mutateAsync(next),
   };
 }
 

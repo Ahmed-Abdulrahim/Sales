@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Building,
+  FileText,
   LayoutDashboard,
   Package,
   Receipt,
@@ -36,6 +37,7 @@ const navItems: NavItem[] = [
   },
   { to: "/items", label: "الأصناف", icon: Package, feature: "items" },
   { to: "/sales", label: "المبيعات", icon: Receipt },
+  { to: "/invoices", label: "الفواتير", icon: FileText },
   { to: "/purchases", label: "المشتريات", icon: Truck, feature: "purchases" },
   { to: "/customers", label: "العملاء", icon: Users },
   { to: "/suppliers", label: "الموردين", icon: Building },

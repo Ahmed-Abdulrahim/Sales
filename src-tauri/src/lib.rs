@@ -29,6 +29,7 @@ use commands::{
         generate_invoice_pdf, get_barcode_print_data, get_invoice_print_data,
         get_label_printer_list, get_purchase_print_data, get_return_print_data, list_printers,
         open_whatsapp_with_invoice, read_logo_base64, save_logo, delete_logo,
+
     },
     reports::{
         report_customer_balances, report_customer_profits, report_daily_sales, report_item_profits,
@@ -171,6 +172,8 @@ pub fn run() {
             get_barcode_print_data,
             open_whatsapp_with_invoice,
             read_logo_base64,
+            save_logo,
+            delete_logo,
             list_printers,
             get_label_printer_list,
             create_expense,

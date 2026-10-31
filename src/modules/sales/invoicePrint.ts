@@ -1,16 +1,19 @@
 import type { InvoicePrintData } from "@/modules/sales/types";
 import { formatEGP } from "@/shared/utils/money";
+import { milliemeToArabicWords } from "@/shared/utils/arabicWords";
 
 /**
- * Builds a professional A4 RTL printable HTML invoice for:
+ * Builds a traditional Arabic A4 sales invoice for:
  * معرض أولاد عبد الرحيم للأدوات الصحية
  *
- * Shared by the POS success screen and the invoice detail sheet.
- * Pair with `printHtml` from `@/shared/utils/printHtml` to send to print.
+ * Layout matches the reference paper invoice:
+ *   - Header: shop name + logo top | customer info (right) | cashier/date (left)
+ *   - Items table (RTL 7 cols): م | اسم الصنف | كمية | سعر | خصم% | صافي السعر | قيمة
+ *   - Totals: الإجمالي | صافي الخصم | صافي الفاتورة | مدفوع نقدا | الرصيد الحالي
+ *   - Footer: amount in Arabic words + "فقط لا غير"
  *
- * The `data.shopLogoDataUrl` field (optional) should be pre-populated with a
- * base64 data URL before calling this function; use `getInvoicePrintDataWithLogo`
- * from the relevant api module rather than `getInvoicePrintData` directly.
+ * Use `getInvoicePrintDataWithLogo` (from the relevant api module) to pre-populate
+ * `data.shopLogoDataUrl` before calling this function.
  */
 export function buildInvoicePrintHtml(data: InvoicePrintData): string {
   /* ── helpers ── */
@@ -26,68 +29,97 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
     const norm = iso.includes("T") ? iso : iso.replace(" ", "T");
     const d = new Date(norm);
     if (isNaN(d.getTime())) return iso;
-    return new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(d);
+    // Format: YYYY-MM-DD
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   function fmtTime(iso: string): string {
     const norm = iso.includes("T") ? iso : iso.replace(" ", "T");
     const d = new Date(norm);
     if (isNaN(d.getTime())) return "";
-    return new Intl.DateTimeFormat("ar-EG", { timeStyle: "short" }).format(d);
+    // Format: HH:MM with Arabic AM/PM
+    const hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    const ampm = hours < 12 ? "ص" : "م";
+    const h12 = hours % 12 || 12;
+    return `${h12}:${minutes}.${ampm}`;
   }
 
-  /* ── header content ── */
-  const shopName = esc(data.shop.shopName || "معرض أولاد عبد الرحيم للأدوات الصحية");
+  function fmt(millieme: number): string {
+    return esc(formatEGP(millieme));
+  }
 
-  const logoHtml =
-    data.shopLogoDataUrl
-      ? `<img src="${data.shopLogoDataUrl}" alt="شعار المعرض" class="logo-img" />`
-      : "";
+  /* ── shop info ── */
+  const shopName = esc(
+    data.shop.shopName || "معرض أولاد عبد الرحيم للأدوات الصحية",
+  );
 
-  // Optional shop contact lines — only show when non-empty and not the default placeholder
-  const addressVal = (data.shop.shopAddress || "").trim();
-  const phoneVal = (data.shop.shopPhone || "").trim();
-  const addressHtml =
-    addressVal && addressVal !== "العنوان" && addressVal !== "العنوان غير محدد"
-      ? `<div class="contact-line">${esc(addressVal)}</div>`
-      : "";
-  const phoneHtml = phoneVal
-    ? `<div class="contact-line">${esc(phoneVal)}</div>`
+  const logoHtml = data.shopLogoDataUrl
+    ? `<img src="${data.shopLogoDataUrl}" alt="شعار المعرض" class="logo-img" />`
     : "";
 
-  /* ── metadata ── */
-  const customerLabel = data.customerName
+  const addressVal = (data.shop.shopAddress || "").trim();
+  const phoneVal = (data.shop.shopPhone || "").trim();
+  const showAddress =
+    addressVal &&
+    addressVal !== "العنوان" &&
+    addressVal !== "العنوان غير محدد";
+
+  /* ── invoice metadata ── */
+  const customerName = data.customerName
     ? esc(data.customerName)
     : '<span class="na">عميل عام</span>';
-  const cashierLabel = data.cashierName ? esc(data.cashierName) : "";
+  const cashierName = data.cashierName ? esc(data.cashierName) : "—";
   const dateStr = esc(fmtDate(data.createdAt));
   const timeStr = esc(fmtTime(data.createdAt));
 
-  /* ── items rows ── */
-  const itemsHtml = data.items
-    .map(
-      (item, i) => `
+  /* ── per-item calculations ── */
+  // Derive discount percentage and net unit price from milliemes.
+  // discount_millieme is the total discount for the whole line (not per unit).
+  const itemRows = data.items.map((item, i) => {
+    const lineTotal = item.totalMillieme; // already net of discount
+    const grossLine = item.qty * item.unitPriceMillieme;
+    const discountTotal = grossLine - lineTotal; // total discount on the line
+    const discountPct =
+      grossLine > 0 ? Math.round((discountTotal / grossLine) * 100) : 0;
+    const netUnitMillieme =
+      item.qty > 0
+        ? Math.round(lineTotal / item.qty)
+        : item.unitPriceMillieme;
+
+    return `
       <tr class="${i % 2 === 0 ? "row-e" : "row-o"}">
         <td class="c-num">${i + 1}</td>
         <td class="c-name">${esc(item.itemNameAr)}</td>
         <td class="c-qty">${item.qty}</td>
-        <td class="c-price">${esc(formatEGP(item.unitPriceMillieme))}</td>
-        <td class="c-total">${esc(formatEGP(item.totalMillieme))}</td>
-      </tr>`,
-    )
-    .join("");
+        <td class="c-price">${fmt(item.unitPriceMillieme)}</td>
+        <td class="c-disc">${discountPct}</td>
+        <td class="c-net">${fmt(netUnitMillieme)}</td>
+        <td class="c-total">${fmt(lineTotal)}</td>
+      </tr>`;
+  });
 
-  /* ── discount row (only shown when non-zero) ── */
-  const discountRowHtml =
-    data.discountMillieme > 0
-      ? `<tr class="t-row">
-           <td class="t-lbl">الخصم</td>
-           <td class="t-val">${esc(formatEGP(data.discountMillieme))}</td>
-         </tr>`
-      : "";
+  /* ── totals section ── */
+  const subtotal = data.subtotalMillieme;
+  const discount = data.discountMillieme;
+  const netTotal = data.totalMillieme;
+  const paid = data.paidMillieme;
 
-  /* ── footer message ── */
-  const footerMsg = "شكرًا لثقتكم في معرض أولاد عبد الرحيم للأدوات الصحية";
+  const customerBalance = data.customerBalanceMillieme;
+  const balanceLabel =
+    customerBalance != null && customerBalance > 0
+      ? "عليه"
+      : customerBalance != null && customerBalance < 0
+        ? "له"
+        : "";
+  const balanceAbs =
+    customerBalance != null ? Math.abs(customerBalance) : null;
+
+  /* ── amount in words ── */
+  const amountWords = esc(milliemeToArabicWords(netTotal));
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -100,34 +132,36 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
 
     @page {
       size: A4 portrait;
-      margin: 14mm 14mm 14mm 14mm;
+      margin: 10mm 12mm 10mm 12mm;
     }
 
     /* ── base ── */
     body {
       font-family: 'Arial', 'Tahoma', 'Segoe UI', sans-serif;
-      font-size: 10.5pt;
-      line-height: 1.5;
-      color: #111;
+      font-size: 10pt;
+      line-height: 1.45;
+      color: #000;
       direction: rtl;
       background: #fff;
     }
 
     .page {
       width: 100%;
-      max-width: 182mm;
+      max-width: 186mm;
       margin: 0 auto;
     }
 
-    /* ── HEADER ── */
-    .inv-header {
+    /* ═══════════════════════════════════════════
+       TOP HEADER: logo + shop name
+    ═══════════════════════════════════════════ */
+    .top-header {
       display: flex;
       flex-direction: row;
       align-items: center;
       justify-content: space-between;
-      padding-bottom: 9pt;
-      border-bottom: 2.5pt solid #222;
-      margin-bottom: 8pt;
+      border: 1.5pt solid #000;
+      padding: 6pt 8pt;
+      margin-bottom: 0;
     }
 
     .h-logo {
@@ -136,8 +170,8 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
     }
 
     .logo-img {
-      max-width: 88pt;
-      max-height: 58pt;
+      max-width: 80pt;
+      max-height: 55pt;
       width: auto;
       height: auto;
       object-fit: contain;
@@ -146,226 +180,339 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
 
     .h-shop {
       flex: 1 1 auto;
-      text-align: right;
-      padding-right: 8pt;
+      text-align: center;
     }
 
     .shop-name {
-      font-size: 13.5pt;
+      font-size: 14pt;
       font-weight: bold;
-      color: #111;
+      color: #000;
       line-height: 1.3;
     }
 
-    .contact-line {
+    .inv-num-line {
+      font-size: 10pt;
+      font-weight: bold;
+      margin-top: 3pt;
+    }
+
+    .h-inv {
+      flex: 0 0 auto;
+      text-align: left;
       font-size: 9pt;
-      color: #555;
-      margin-top: 2pt;
     }
 
-    /* ── INVOICE-ID BAR ── */
-    .id-bar {
+    /* ═══════════════════════════════════════════
+       META SECTION: customer info (right) | cashier/date (left)
+    ═══════════════════════════════════════════ */
+    .meta-section {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #f4f4f4;
-      border: 1pt solid #ccc;
-      border-radius: 3pt;
-      padding: 5pt 9pt;
-      margin-bottom: 8pt;
+      flex-direction: row;
+      border: 1.5pt solid #000;
+      border-top: none;
+      margin-bottom: 0;
     }
 
-    .id-lbl { font-size: 9pt; color: #555; font-weight: bold; }
-    .id-num { font-size: 13pt; font-weight: bold; color: #111; letter-spacing: 0.4pt; }
+    .meta-right {
+      flex: 1 1 55%;
+      border-left: 1pt solid #000;
+      padding: 5pt 7pt;
+    }
 
-    /* ── META GRID ── */
-    .meta-box {
-      border: 1pt solid #ddd;
-      border-radius: 3pt;
-      margin-bottom: 10pt;
+    .meta-left {
+      flex: 1 1 45%;
+      padding: 5pt 7pt;
     }
 
     .meta-row {
       display: flex;
       flex-direction: row;
-      align-items: stretch;
-      border-bottom: 1pt solid #eee;
+      align-items: baseline;
+      gap: 4pt;
+      padding: 1.5pt 0;
     }
 
-    .meta-row:last-child { border-bottom: none; }
-
-    .meta-cell {
-      flex: 1 1 50%;
-      display: flex;
-      align-items: center;
-      gap: 5pt;
-      padding: 5pt 8pt;
+    .mk {
+      font-size: 9pt;
+      font-weight: bold;
+      color: #000;
+      white-space: nowrap;
+      min-width: 60pt;
     }
 
-    .meta-cell + .meta-cell { border-right: 1pt solid #eee; }
+    .mv {
+      font-size: 9pt;
+      font-weight: bold;
+      color: #000;
+    }
 
-    .mk { font-size: 9pt; color: #555; font-weight: bold; white-space: nowrap; }
-    .mv { font-size: 10pt; font-weight: bold; color: #111; }
-    .na { font-weight: normal; color: #888; }
+    .na { font-weight: normal; color: #000; }
 
-    /* ── ITEMS TABLE ── */
+    /* ═══════════════════════════════════════════
+       ITEMS TABLE
+    ═══════════════════════════════════════════ */
     .items-tbl {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 10pt;
-      font-size: 10pt;
+      margin-bottom: 0;
+      font-size: 9.5pt;
+      border: 1.5pt solid #000;
+      border-top: none;
     }
 
     .items-tbl thead tr {
-      background: #222;
-      color: #fff;
+      background: #ddd;
     }
 
     .items-tbl th {
-      padding: 5pt 6pt;
+      padding: 4pt 4pt;
       font-weight: bold;
-      font-size: 9.5pt;
-      border: 1pt solid #222;
+      font-size: 9pt;
+      border: 1pt solid #000;
       text-align: center;
     }
 
-    /* RTL column order: م | اسم الصنف | الكمية | سعر الوحدة | الإجمالي */
-    .c-num   { width: 6%;  text-align: center; }
-    .c-name  { width: 46%; text-align: right;  word-break: break-word; }
-    .c-qty   { width: 10%; text-align: center; }
-    .c-price { width: 19%; text-align: center; }
-    .c-total { width: 19%; text-align: center; }
+    /* RTL column order */
+    .c-num   { width: 5%;  text-align: center; }
+    .c-name  { width: 35%; text-align: right; word-break: break-word; padding-right: 5pt; }
+    .c-qty   { width: 8%;  text-align: center; }
+    .c-price { width: 13%; text-align: center; }
+    .c-disc  { width: 8%;  text-align: center; }
+    .c-net   { width: 13%; text-align: center; }
+    .c-total { width: 14%; text-align: center; }
 
     .items-tbl td {
-      padding: 5pt 6pt;
-      border: 1pt solid #ddd;
+      padding: 3.5pt 4pt;
+      border: 1pt solid #000;
     }
 
     .row-e { background: #fff; }
-    .row-o { background: #fafafa; }
+    .row-o { background: #f5f5f5; }
 
-    /* ── TOTALS ── */
-    .totals-wrap {
+    /* ═══════════════════════════════════════════
+       TOTALS SECTION
+    ═══════════════════════════════════════════ */
+    .totals-section {
       display: flex;
-      justify-content: flex-start;
-      margin-bottom: 16pt;
+      flex-direction: row;
+      border: 1.5pt solid #000;
+      border-top: none;
+    }
+
+    .totals-right {
+      flex: 1 1 auto;
+      padding: 4pt 6pt;
+      display: flex;
+      align-items: center;
+      font-size: 9pt;
+      border-left: 1pt solid #000;
+    }
+
+    .totals-right span {
+      font-weight: bold;
+    }
+
+    .paid-label {
+      font-weight: bold;
+      margin-left: 4pt;
     }
 
     .totals-tbl {
       border-collapse: collapse;
-      width: 220pt;
-      font-size: 10.5pt;
+      min-width: 180pt;
     }
 
     .totals-tbl td {
-      padding: 4pt 8pt;
-      border: 1pt solid #ddd;
+      padding: 3pt 6pt;
+      border: 1pt solid #000;
+      font-size: 9.5pt;
     }
 
-    .t-lbl { font-weight: bold; color: #444; text-align: right; white-space: nowrap; }
-    .t-val { text-align: center; font-weight: bold; color: #111; }
-
-    .grand-row td {
-      background: #222;
-      color: #fff;
-      font-size: 12pt;
+    .t-lbl {
       font-weight: bold;
-      border-color: #222;
+      text-align: right;
+      white-space: nowrap;
+      color: #000;
+      background: #eee;
     }
 
-    /* ── FOOTER ── */
-    .inv-footer {
-      border-top: 2pt solid #222;
-      padding-top: 8pt;
+    .t-val {
       text-align: center;
-      font-size: 10pt;
       font-weight: bold;
-      color: #222;
+      color: #000;
+      min-width: 70pt;
     }
 
-    /* ── PRINT ── */
+    .grand-lbl {
+      font-weight: bold;
+      font-size: 10.5pt;
+      background: #eee;
+    }
+
+    .grand-val {
+      font-weight: bold;
+      font-size: 10.5pt;
+    }
+
+    .balance-section {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 6pt;
+      border: 1.5pt solid #000;
+      border-top: none;
+      padding: 3pt 7pt;
+      font-size: 9pt;
+    }
+
+    .balance-label { font-weight: bold; }
+    .balance-value { font-weight: bold; }
+    .balance-dir   { font-weight: bold; font-size: 10pt; border: 1pt solid #000; padding: 0 4pt; margin-right: 4pt; }
+
+    /* ═══════════════════════════════════════════
+       FOOTER — amount in words
+    ═══════════════════════════════════════════ */
+    .words-footer {
+      border: 1.5pt solid #000;
+      border-top: none;
+      padding: 4pt 7pt;
+      font-size: 9.5pt;
+      font-weight: bold;
+    }
+
+    .shop-footer {
+      border-top: 1.5pt solid #000;
+      margin-top: 8pt;
+      padding-top: 4pt;
+      text-align: center;
+      font-size: 9pt;
+      font-weight: bold;
+    }
+
+    /* ── print ── */
     @media print {
       body { margin: 0; }
       .page { max-width: 100%; }
       .items-tbl thead { display: table-header-group; }
       tr { page-break-inside: avoid; }
-      .totals-wrap { page-break-inside: avoid; }
-      .inv-footer  { page-break-inside: avoid; }
+      .totals-section { page-break-inside: avoid; }
+      .words-footer { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
   <div class="page">
 
-    <!-- HEADER: logo (left) | shop name (right) -->
-    <div class="inv-header">
+    <!-- TOP HEADER: logo | shop name | invoice number -->
+    <div class="top-header">
       <div class="h-logo">${logoHtml}</div>
       <div class="h-shop">
         <div class="shop-name">${shopName}</div>
-        ${addressHtml}${phoneHtml}
+        ${showAddress ? `<div style="font-size:8.5pt;margin-top:2pt;">${esc(addressVal)}</div>` : ""}
+        ${phoneVal ? `<div style="font-size:8.5pt;">${esc(phoneVal)}</div>` : ""}
+      </div>
+      <div class="h-inv">
+        <div style="font-size:9pt;font-weight:bold;">رقم الفاتورة</div>
+        <div style="font-size:13pt;font-weight:bold;letter-spacing:0.5pt;">${esc(data.invoiceNumber)}</div>
       </div>
     </div>
 
-    <!-- INVOICE NUMBER BAR -->
-    <div class="id-bar">
-      <span class="id-lbl">رقم الفاتورة</span>
-      <span class="id-num">${esc(data.invoiceNumber)}</span>
-    </div>
-
-    <!-- METADATA -->
-    <div class="meta-box">
-      <div class="meta-row">
-        <div class="meta-cell">
-          <span class="mk">العميل:</span>
-          <span class="mv">${customerLabel}</span>
+    <!-- META SECTION -->
+    <div class="meta-section">
+      <!-- Right: customer info -->
+      <div class="meta-right">
+        <div class="meta-row">
+          <span class="mk">اسم العميل :</span>
+          <span class="mv">${customerName}</span>
         </div>
-        <div class="meta-cell">
-          ${cashierLabel ? `<span class="mk">البائع:</span><span class="mv">${cashierLabel}</span>` : ""}
+        <div class="meta-row">
+          <span class="mk">العنوان :</span>
+          <span class="mv na"></span>
         </div>
-      </div>
-      <div class="meta-row">
-        <div class="meta-cell">
-          <span class="mk">التاريخ:</span>
-          <span class="mv">${dateStr}</span>
-        </div>
-        <div class="meta-cell">
-          <span class="mk">الوقت:</span>
-          <span class="mv">${timeStr}</span>
+        <div class="meta-row">
+          <span class="mk">الهاتف :</span>
+          <span class="mv na"></span>
         </div>
       </div>
+      <!-- Left: cashier / date -->
+      <div class="meta-left">
+        <div class="meta-row">
+          <span class="mk">المندوب :</span>
+          <span class="mv na"></span>
+        </div>
+        <div class="meta-row">
+          <span class="mk">المستخدم :</span>
+          <span class="mv">${cashierName}</span>
+        </div>
+        <div class="meta-row">
+          <span class="mk">التاريخ :</span>
+          <span class="mv">${dateStr} &nbsp; ${timeStr}</span>
+        </div>
+      </div>
     </div>
 
-    <!-- ITEMS TABLE  (RTL column order: م | اسم الصنف | الكمية | سعر الوحدة | الإجمالي) -->
+    <!-- ITEMS TABLE (7 RTL columns) -->
     <table class="items-tbl">
       <thead>
         <tr>
           <th class="c-num">م</th>
           <th class="c-name">اسم الصنف</th>
-          <th class="c-qty">الكمية</th>
-          <th class="c-price">سعر الوحدة</th>
-          <th class="c-total">الإجمالي</th>
+          <th class="c-qty">كمية</th>
+          <th class="c-price">سعر</th>
+          <th class="c-disc">خصم%</th>
+          <th class="c-net">صافي السعر</th>
+          <th class="c-total">قيمة</th>
         </tr>
       </thead>
-      <tbody>${itemsHtml}</tbody>
+      <tbody>${itemRows.join("")}</tbody>
     </table>
 
-    <!-- TOTALS -->
-    <div class="totals-wrap">
+    <!-- TOTALS SECTION -->
+    <div class="totals-section">
+      <!-- Left: paid amount -->
+      <div class="totals-right">
+        <span class="paid-label">مدفوع نقدا</span>
+        <span>${fmt(paid)}</span>
+      </div>
+      <!-- Right: totals table -->
       <table class="totals-tbl">
-        <tr class="t-row">
-          <td class="t-lbl">الإجمالي قبل الخصم</td>
-          <td class="t-val">${esc(formatEGP(data.subtotalMillieme))}</td>
+        <tr>
+          <td class="t-lbl">الإجمالي</td>
+          <td class="t-val">${fmt(subtotal)}</td>
         </tr>
-        ${discountRowHtml}
-        <tr class="grand-row">
-          <td class="t-lbl">صافي الفاتورة</td>
-          <td class="t-val">${esc(formatEGP(data.totalMillieme))}</td>
+        ${
+          discount > 0
+            ? `<tr>
+          <td class="t-lbl">صافي الخصم</td>
+          <td class="t-val">${fmt(discount)}</td>
+        </tr>`
+            : `<tr>
+          <td class="t-lbl">صافي الخصم</td>
+          <td class="t-val">0</td>
+        </tr>`
+        }
+        <tr>
+          <td class="t-lbl grand-lbl">صافي الفاتورة :</td>
+          <td class="t-val grand-val">${fmt(netTotal)}</td>
         </tr>
       </table>
     </div>
 
-    <!-- FOOTER -->
-    <div class="inv-footer">${esc(footerMsg)}</div>
+    ${
+      customerBalance != null && balanceAbs != null
+        ? `<div class="balance-section">
+      <span class="balance-label">الرصيد الحالي :</span>
+      <span class="balance-value">${fmt(balanceAbs)}</span>
+      ${balanceLabel ? `<span class="balance-dir">${esc(balanceLabel)}</span>` : ""}
+    </div>`
+        : ""
+    }
+
+    <!-- FOOTER: amount in words -->
+    <div class="words-footer">${amountWords}</div>
+
+    <!-- Shop footer line -->
+    <div class="shop-footer">شكرًا لثقتكم في ${shopName}</div>
 
   </div>
 </body>
