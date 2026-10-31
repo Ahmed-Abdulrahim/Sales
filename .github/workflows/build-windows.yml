@@ -44,10 +44,11 @@ jobs:
       - name: Build Windows MSI
         run: npm run tauri -- build --bundles msi
 
-      - name: Upload MSI installer
+      - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
           name: Safqah-Windows-MSI
           path: src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
           retention-days: 14
+
