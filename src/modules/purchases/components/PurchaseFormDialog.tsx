@@ -21,6 +21,17 @@ import { PurchaseHeaderFields } from "./PurchaseHeaderFields";
 import { PurchaseSummaryPanel } from "./PurchaseSummaryPanel";
 import { SelectedPurchaseItemsTable } from "./SelectedPurchaseItemsTable";
 
+type ItemWithSupplier = {
+  id: number;
+  name_ar: string;
+  buy_price_millieme: number;
+  sell_price_millieme: number;
+  current_stock: number;
+  unit: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+};
+
 export function PurchaseFormDialog({
   open,
   onOpenChange,
@@ -141,11 +152,10 @@ export function PurchaseFormDialog({
   });
 
   const itemsQuery = useQuery({
-    queryKey: ["purchase-items", deferredSearch],
+    queryKey: ["purchase-items-with-supplier", deferredSearch],
     queryFn: () =>
-      invoke<Item[]>("list_items", {
-        search: deferredSearch.trim() || null,
-        categoryId: null,
+      invoke<ItemWithSupplier[]>("search_items_for_purchase", {
+        query: deferredSearch.trim() || null,
       }),
     enabled: deferredSearch.trim().length > 0,
     staleTime: 30 * 1000,
@@ -333,11 +343,19 @@ export function PurchaseFormDialog({
     });
   };
 
-  const handleSelectItem = async (item: Item) => {
+  const handleSelectItem = async (item: ItemWithSupplier) => {
     const requestId = historyRequestIdRef.current + 1;
     historyRequestIdRef.current = requestId;
 
-    setSelectedHistoryItem(item);
+    // Auto-fill supplier from the selected item if no supplier is set yet
+    if (!supplierId && item.supplier_id) {
+      setSupplierId(String(item.supplier_id));
+    }
+
+    // Build a minimal object for history panel display (only id and name_ar are used)
+    const itemForHistory = { id: item.id, name_ar: item.name_ar } as Item;
+
+    setSelectedHistoryItem(itemForHistory);
     setHistoryLoadingItemId(item.id);
     setSearch("");
 
@@ -509,7 +527,7 @@ export function PurchaseFormDialog({
 
                 {deferredSearch.trim().length === 0 ? (
                   <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                    اكتب اسم الصنف أو الباركود للبحث.
+                    اكتب اسم الصنف للبحث.
                   </div>
                 ) : itemsQuery.isLoading ? (
                   <div className="space-y-2">
@@ -533,7 +551,7 @@ export function PurchaseFormDialog({
                           {item.name_ar}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {item.barcode || "بدون باركود"}
+                          {item.supplier_name ?? "بدون مورد"}
                         </span>
                       </button>
                     ))}

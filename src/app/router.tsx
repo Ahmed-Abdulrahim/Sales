@@ -46,28 +46,8 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: "customers",
-        element: <LazyRoute loader={() => import("@/modules/customers")} />,
-      },
-      {
-        path: "suppliers",
-        element: <LazyRoute loader={() => import("@/modules/suppliers")} />,
-      },
-      {
-        path: "finance",
-        element: (
-          <FeatureRoute feature="finance">
-            <LazyRoute loader={() => import("@/modules/finance")} />
-          </FeatureRoute>
-        ),
-      },
-      {
-        path: "reports",
-        element: (
-          <FeatureRoute feature="reports">
-            <LazyRoute loader={() => import("@/modules/reports")} />
-          </FeatureRoute>
-        ),
+        path: "debts",
+        element: <LazyRoute loader={() => import("@/modules/debts")} />,
       },
       {
         path: "settings",

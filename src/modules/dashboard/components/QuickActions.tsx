@@ -1,48 +1,25 @@
-import {
-  Barcode,
-  FilePlus2,
-  PackagePlus,
-  Receipt,
-  TrendingDown,
-  UserPlus,
-  Wallet,
-} from "lucide-react";
+import { FilePlus2, PackagePlus, Receipt } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
-export function QuickActions({
-  onAddItem,
-  onBarcodeLabels,
-}: {
-  onAddItem: () => void;
-  onBarcodeLabels: () => void;
-}) {
+export function QuickActions({ onAddItem }: { onAddItem: () => void }) {
   return (
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">إجراءات سريعة</h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <QuickAction to="/pos" icon={<Receipt />}>
           فاتورة جديدة
         </QuickAction>
         <QuickAction icon={<PackagePlus />} onClick={onAddItem}>
           إضافة صنف
         </QuickAction>
-        <QuickAction icon={<Barcode />} onClick={onBarcodeLabels}>
-          طباعة باركود
-        </QuickAction>
         <QuickAction to="/purchases" icon={<FilePlus2 />}>
           فاتورة شراء
         </QuickAction>
-        <QuickAction to="/customers" icon={<UserPlus />}>
-          عميل جديد
-        </QuickAction>
-        <QuickAction to="/finance" icon={<Wallet />}>
-          سند قبض
-        </QuickAction>
-        <QuickAction to="/finance" icon={<TrendingDown />}>
-          سند صرف
+        <QuickAction to="/debts" icon={<Receipt />}>
+          مديونيات العملاء
         </QuickAction>
       </div>
     </section>

@@ -21,6 +21,8 @@ export function getStockBadgeTone(stock: number) {
 export function buildSalePayload(params: {
   sessionId: number;
   customerId: number | null;
+  customerName: string;
+  customerPhone: string;
   paymentMethod: PaymentMethod;
   globalDiscountMillieme: number;
   paidCashMillieme: number;
@@ -31,6 +33,8 @@ export function buildSalePayload(params: {
   return {
     sessionId: params.sessionId,
     customerId: params.customerId,
+    customerName: params.customerName.trim() || null,
+    customerPhone: params.customerPhone.trim() || null,
     paymentMethod: params.paymentMethod,
     globalDiscountMillieme: params.globalDiscountMillieme,
     paidMillieme: params.paidCashMillieme + params.paidCardMillieme,

@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   createSaleInvoice,
   listCategories,
-  searchCustomers,
   searchPosItems,
 } from "@/modules/pos/api";
 import { POS_STALE_TIME_MS, posKeys } from "@/modules/pos/constants";
@@ -26,15 +25,6 @@ export function usePosItems(query: string, categoryId: number | null) {
     staleTime: POS_STALE_TIME_MS,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
-  });
-}
-
-export function useCustomerSearch(query: string) {
-  return useQuery({
-    queryKey: posKeys.customers(query),
-    queryFn: () => searchCustomers(query.trim() || null),
-    enabled: query.trim().length > 0,
-    staleTime: POS_STALE_TIME_MS,
   });
 }
 

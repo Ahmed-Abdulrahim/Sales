@@ -483,6 +483,7 @@ pub async fn get_invoice_print_data(
     Ok(InvoicePrintData {
         invoice_number: invoice.invoice_number,
         customer_name: invoice.customer_name,
+        customer_phone: invoice.customer_phone,
         cashier_name: invoice.cashier_name,
         subtotal_millieme: invoice.subtotal_millieme,
         discount_millieme: invoice.discount_millieme,

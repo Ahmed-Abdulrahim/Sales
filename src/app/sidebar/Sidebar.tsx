@@ -1,7 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChart3,
-  Building,
+  AlertCircle,
   FileText,
   LayoutDashboard,
   Package,
@@ -9,8 +8,6 @@ import {
   Settings,
   ShoppingCart,
   Truck,
-  Users,
-  Wallet,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -39,10 +36,7 @@ const navItems: NavItem[] = [
   { to: "/sales", label: "المبيعات", icon: Receipt },
   { to: "/invoices", label: "الفواتير", icon: FileText },
   { to: "/purchases", label: "المشتريات", icon: Truck, feature: "purchases" },
-  { to: "/customers", label: "العملاء", icon: Users },
-  { to: "/suppliers", label: "الموردين", icon: Building },
-  { to: "/finance", label: "المالية", icon: Wallet, feature: "finance" },
-  { to: "/reports", label: "التقارير", icon: BarChart3, feature: "reports" },
+  { to: "/debts", label: "مديونيات العملاء", icon: AlertCircle },
   { to: "/settings", label: "الإعدادات", icon: Settings, feature: "settings" },
 ];
 

@@ -3,6 +3,7 @@ pub mod finance;
 pub mod import;
 pub mod inventory;
 pub mod item;
+pub mod item_with_supplier;
 pub mod print;
 pub mod purchase;
 pub mod sale;

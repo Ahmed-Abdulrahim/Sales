@@ -72,6 +72,7 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
   const customerName = data.customerName
     ? esc(data.customerName)
     : '<span class="na">عميل عام</span>';
+  const customerPhone = data.customerPhone ? esc(data.customerPhone) : null;
   const cashierName = data.cashierName ? esc(data.cashierName) : "—";
   const dateStr = esc(fmtDate(data.createdAt));
   const timeStr = esc(fmtTime(data.createdAt));
@@ -426,11 +427,11 @@ export function buildInvoicePrintHtml(data: InvoicePrintData): string {
           <span class="mv">${customerName}</span>
         </div>
         <div class="meta-row">
-          <span class="mk">العنوان :</span>
-          <span class="mv na"></span>
+          <span class="mk">الهاتف :</span>
+          <span class="mv">${customerPhone ? customerPhone : '<span class="na"></span>'}</span>
         </div>
         <div class="meta-row">
-          <span class="mk">الهاتف :</span>
+          <span class="mk">العنوان :</span>
           <span class="mv na"></span>
         </div>
       </div>

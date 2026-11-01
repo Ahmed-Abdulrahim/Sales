@@ -6,27 +6,25 @@ import { formatEGP, toMillieme } from "@/shared/utils/money";
 
 export function PaymentPanel({
   paymentMethod,
-  paymentMethodLabel,
   onSetPaymentMethod,
   totalMillieme,
   paidCashMillieme,
   paidCardMillieme,
   changeMillieme,
+  remainingMillieme,
   deferredRemainingMillieme,
-  projectedCustomerBalanceMillieme,
   onSetPaidCashAmount,
   onSetPaidCardAmount,
   onEnsureCashPaidAtLeastTotal,
 }: {
   paymentMethod: PaymentMethod;
-  paymentMethodLabel: Record<PaymentMethod, string>;
   onSetPaymentMethod: (method: PaymentMethod) => void;
   totalMillieme: number;
   paidCashMillieme: number;
   paidCardMillieme: number;
   changeMillieme: number;
+  remainingMillieme: number;
   deferredRemainingMillieme: number;
-  projectedCustomerBalanceMillieme: number | null;
   onSetPaidCashAmount: (amount: number) => void;
   onSetPaidCardAmount: (amount: number) => void;
   onEnsureCashPaidAtLeastTotal: (
@@ -34,20 +32,27 @@ export function PaymentPanel({
     totalMillieme: number,
   ) => number;
 }) {
+  const paymentMethodLabel: Record<PaymentMethod, string> = {
+    cash: "كاش",
+    card: "فيزا",
+    deferred: "آجل",
+    split: "دفع مختلط",
+  };
+
   return (
     <div className="space-y-3 rounded-2xl border p-4">
       <div className="flex flex-wrap gap-2">
-        {(
-          Object.entries(paymentMethodLabel) as Array<[PaymentMethod, string]>
-        ).map(([value, label]) => (
-          <PaymentTab
-            key={value}
-            active={paymentMethod === value}
-            onClick={() => onSetPaymentMethod(value)}
-          >
-            {label}
-          </PaymentTab>
-        ))}
+        {(Object.entries(paymentMethodLabel) as Array<[PaymentMethod, string]>).map(
+          ([value, label]) => (
+            <PaymentTab
+              key={value}
+              active={paymentMethod === value}
+              onClick={() => onSetPaymentMethod(value)}
+            >
+              {label}
+            </PaymentTab>
+          ),
+        )}
       </div>
 
       {paymentMethod === "cash" ? (
@@ -77,32 +82,9 @@ export function PaymentPanel({
               }
             }}
           />
-          {projectedCustomerBalanceMillieme !== null && changeMillieme > 0 ? (
-            <>
-              <p className="text-sm font-medium text-emerald-700">
-                سيُضاف للرصيد لصالح العميل: {formatEGP(changeMillieme)}
-              </p>
-              {projectedCustomerBalanceMillieme > 0 ? (
-                <p className="text-sm font-medium text-red-700">
-                  الرصيد بعد البيع: مديونية{" "}
-                  {formatEGP(projectedCustomerBalanceMillieme)}
-                </p>
-              ) : projectedCustomerBalanceMillieme < 0 ? (
-                <p className="text-sm font-medium text-emerald-700">
-                  الرصيد بعد البيع: دائن للعميل{" "}
-                  {formatEGP(Math.abs(projectedCustomerBalanceMillieme))}
-                </p>
-              ) : (
-                <p className="text-sm font-medium text-emerald-700">
-                  الرصيد بعد البيع: ٠٫٠٠
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              الباقي: {formatEGP(Math.max(changeMillieme, 0))}
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground">
+            الباقي: {formatEGP(Math.max(changeMillieme, 0))}
+          </p>
         </div>
       ) : null}
 
@@ -148,26 +130,6 @@ export function PaymentPanel({
           <p className="text-sm text-muted-foreground">
             المتبقي على الحساب: {formatEGP(deferredRemainingMillieme)}
           </p>
-          <p className="text-sm font-medium text-amber-700">
-            سيتم تسجيل المتبقي كمديونية على العميل بعد خصم أي رصيد دائن متاح له.
-          </p>
-          {projectedCustomerBalanceMillieme !== null ? (
-            projectedCustomerBalanceMillieme > 0 ? (
-              <p className="text-sm font-medium text-red-700">
-                الرصيد بعد البيع: مديونية{" "}
-                {formatEGP(projectedCustomerBalanceMillieme)}
-              </p>
-            ) : projectedCustomerBalanceMillieme < 0 ? (
-              <p className="text-sm font-medium text-emerald-700">
-                الرصيد بعد البيع: دائن للعميل{" "}
-                {formatEGP(Math.abs(projectedCustomerBalanceMillieme))}
-              </p>
-            ) : (
-              <p className="text-sm font-medium text-emerald-700">
-                الرصيد بعد البيع: ٠٫٠٠
-              </p>
-            )
-          ) : null}
         </div>
       ) : null}
 
@@ -210,6 +172,11 @@ export function PaymentPanel({
           <p className="text-sm text-muted-foreground sm:col-span-2">
             المدفوع حاليًا: {formatEGP(paidCashMillieme + paidCardMillieme)}
           </p>
+          {remainingMillieme > 0 ? (
+            <p className="text-sm font-medium text-amber-700 sm:col-span-2">
+              المتبقي: {formatEGP(remainingMillieme)}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

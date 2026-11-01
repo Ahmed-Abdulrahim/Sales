@@ -18,6 +18,7 @@ export type InvoiceSummary = {
   invoice_number: string;
   customer_id: number | null;
   customer_name: string | null;
+  customer_phone: string | null;
   total_millieme: number;
   paid_millieme: number;
   payment_method: PaymentMethod;
@@ -47,6 +48,7 @@ export type InvoiceItemDetail = {
 export type InvoiceDetail = InvoiceSummary & {
   session_id: number;
   cashier_id: number;
+  cashier_name: string | null;
   subtotal_millieme: number;
   discount_millieme: number;
   tax_millieme: number;
@@ -96,6 +98,7 @@ export type InvoicePrintItem = {
 export type InvoicePrintData = {
   invoiceNumber: string;
   customerName: string | null;
+  customerPhone: string | null;
   cashierName: string | null;
   subtotalMillieme: number;
   discountMillieme: number;

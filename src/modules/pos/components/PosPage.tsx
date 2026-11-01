@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,18 +22,15 @@ import {
   getInvoicePrintDataWithLogo,
   openWhatsappWithInvoice,
 } from "@/modules/pos/api";
-import type { Customer } from "@/modules/parties/types";
 import type { Item } from "@/modules/items/types";
 import { parseAppError } from "@/modules/items/utils";
 import {
   useCreateSaleInvoice,
-  useCustomerSearch,
   usePosCategories,
   usePosItems,
 } from "@/modules/pos/hooks";
 import type { PaymentMethod } from "@/modules/pos/types";
 import { buildSalePayload } from "@/modules/pos/utils";
-import { useBarcodeScanner } from "@/shared/hooks/useBarcodeScanner";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { buildInvoicePrintHtml } from "@/modules/sales/invoicePrint";
 import { useInvalidate } from "@/shared/hooks/useInvalidate";
@@ -51,8 +48,8 @@ export default function PosPage() {
   const itemClickTimeoutRef = useRef<number | null>(null);
 
   const cartItems = useCartStore((state) => state.items);
-  const customerId = useCartStore((state) => state.customerId);
   const customerName = useCartStore((state) => state.customerName);
+  const customerPhone = useCartStore((state) => state.customerPhone);
   const globalDiscountMillieme = useCartStore(
     (state) => state.globalDiscountMillieme,
   );
@@ -69,6 +66,7 @@ export default function PosPage() {
   );
   const totalMillieme = useCartStore((state) => state.totalMillieme());
   const changeMillieme = useCartStore((state) => state.changeMillieme());
+  const remainingMillieme = useCartStore((state) => state.remainingMillieme());
 
   const addItem = useCartStore((state) => state.addItem);
   const removeItem = useCartStore((state) => state.removeItem);
@@ -80,8 +78,8 @@ export default function PosPage() {
     (state) => state.updateLineUnitPrice,
   );
   const setGlobalDiscount = useCartStore((state) => state.setGlobalDiscount);
-  const setCustomer = useCartStore((state) => state.setCustomer);
-  const clearCustomer = useCartStore((state) => state.clearCustomer);
+  const setCustomerName = useCartStore((state) => state.setCustomerName);
+  const setCustomerPhone = useCartStore((state) => state.setCustomerPhone);
   const setPaymentMethod = useCartStore((state) => state.setPaymentMethod);
   const setPaidCashAmount = useCartStore((state) => state.setPaidCashAmount);
   const setPaidCardAmount = useCartStore((state) => state.setPaidCardAmount);
@@ -90,10 +88,6 @@ export default function PosPage() {
 
   const [search, setSearch] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
-    null,
-  );
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
   const [adjustedItem, setAdjustedItem] = useState<Item | null>(null);
@@ -105,7 +99,6 @@ export default function PosPage() {
   const [whatsappLoading, setWhatsappLoading] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search, 150);
-  const debouncedCustomerSearch = useDebouncedValue(customerSearch, 150);
 
   const focusSearchInput = () => {
     searchInputRef.current?.focus();
@@ -207,79 +200,20 @@ export default function PosPage() {
     totalMillieme,
   ]);
 
-  useEffect(() => {
-    if (!customerId) {
-      setSelectedCustomer(null);
-      setCustomerSearch("");
-    }
-  }, [customerId]);
-
-  useBarcodeScanner((barcode) => {
-    setSearch(barcode);
-    focusSearchInput();
-  }, !successInvoice);
-
   const categoriesQuery = usePosCategories();
   const itemsQuery = usePosItems(debouncedSearch, selectedCategoryId);
-  const customersQuery = useCustomerSearch(debouncedCustomerSearch);
   const createSaleMutation = useCreateSaleInvoice();
 
   const items = itemsQuery.data ?? [];
   const categories = categoriesQuery.data ?? [];
-  const customerResults = customersQuery.data ?? [];
-  const selectedCustomerBalanceMillieme =
-    selectedCustomer?.balance_millieme ?? 0;
-  const deferredPaidNowMillieme =
-    paymentMethod === "deferred" ? paidCashMillieme + paidCardMillieme : 0;
+
   const deferredRemainingMillieme =
     paymentMethod === "deferred"
-      ? Math.max(totalMillieme - deferredPaidNowMillieme, 0)
+      ? Math.max(totalMillieme - paidCashMillieme - paidCardMillieme, 0)
       : 0;
-  // How the selected customer's balance changes after this sale.
-  //  - deferred: total - paidNow (positive = owes us, negative = store credit)
-  //  - cash overpayment: the excess becomes store credit (negative)
-  let customerBalanceDeltaMillieme: number | null = null;
-  if (selectedCustomer) {
-    if (paymentMethod === "deferred") {
-      customerBalanceDeltaMillieme = totalMillieme - deferredPaidNowMillieme;
-    } else if (paymentMethod === "cash" && paidCashMillieme > totalMillieme) {
-      customerBalanceDeltaMillieme = totalMillieme - paidCashMillieme;
-    }
-  }
-  const projectedCustomerBalanceMillieme =
-    customerBalanceDeltaMillieme !== null
-      ? selectedCustomerBalanceMillieme + customerBalanceDeltaMillieme
-      : null;
 
   const isCartEmpty = cartItems.length === 0;
-  const requiresCustomer = paymentMethod === "deferred";
-  const isSubmitDisabled =
-    isCartEmpty ||
-    createSaleMutation.isPending ||
-    (requiresCustomer && customerId === null);
-
-  const paymentMethodLabel = useMemo(
-    () =>
-      ({
-        cash: "كاش",
-        card: "فيزا",
-        deferred: "آجل",
-        split: "دفع مختلط",
-      }) satisfies Record<PaymentMethod, string>,
-    [],
-  );
-
-  const handleSelectCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setCustomer(customer.id, customer.name);
-    setCustomerSearch(customer.name);
-  };
-
-  const handleClearCustomer = () => {
-    clearCustomer();
-    setSelectedCustomer(null);
-    setCustomerSearch("");
-  };
+  const isSubmitDisabled = isCartEmpty || createSaleMutation.isPending;
 
   const handleAddItem = (item: Item) => {
     addItem(item);
@@ -337,8 +271,6 @@ export default function PosPage() {
     }
 
     clearCart();
-    setSelectedCustomer(null);
-    setCustomerSearch("");
     setSearch("");
     setWhatsappLoading(false);
     setWhatsappPdfPath(null);
@@ -352,8 +284,6 @@ export default function PosPage() {
     }
 
     clearCart();
-    setSelectedCustomer(null);
-    setCustomerSearch("");
     setSearch("");
     setSuccessInvoice(null);
     setWhatsappLoading(false);
@@ -364,11 +294,6 @@ export default function PosPage() {
   const handleSubmitSale = async () => {
     if (!activeSession) {
       toast.error("لا توجد وردية مفتوحة");
-      return;
-    }
-
-    if (paymentMethod === "deferred" && customerId === null) {
-      toast.error("اختيار العميل مطلوب للبيع الآجل");
       return;
     }
 
@@ -383,14 +308,6 @@ export default function PosPage() {
     }
 
     if (
-      paymentMethod === "deferred" &&
-      paidCashMillieme + paidCardMillieme > totalMillieme
-    ) {
-      toast.error("المبلغ المدفوع أكبر من إجمالي الفاتورة");
-      return;
-    }
-
-    if (
       paymentMethod === "split" &&
       paidCashMillieme + paidCardMillieme !== totalMillieme
     ) {
@@ -400,7 +317,9 @@ export default function PosPage() {
 
     const payload = buildSalePayload({
       sessionId: activeSession.id,
-      customerId,
+      customerId: null,
+      customerName: customerName,
+      customerPhone: customerPhone,
       paymentMethod,
       globalDiscountMillieme,
       paidCashMillieme,
@@ -412,7 +331,7 @@ export default function PosPage() {
     await createSaleMutation.mutateAsync(payload, {
       onSuccess: async (invoice) => {
         setSuccessInvoice(invoice);
-        await invalidate(["pos-items"], ["items"], ["customers"], ["dashboard"]);
+        await invalidate(["pos-items"], ["items"], ["dashboard"]);
       },
       onError: (error) => {
         toast.error(parseAppError(error).message_ar);
@@ -456,38 +375,21 @@ export default function PosPage() {
               />
 
               <CustomerPanel
-                customerSearch={customerSearch}
-                customerId={customerId}
-                onCustomerSearchChange={(value) => {
-                  setCustomerSearch(value);
-                  if (customerId && value !== customerName) {
-                    clearCustomer();
-                    setSelectedCustomer(null);
-                  }
-                }}
-                onClearCustomer={handleClearCustomer}
-                onSelectCustomer={handleSelectCustomer}
-                customers={customerResults}
-                showResults={
-                  customersQuery.isSuccess &&
-                  customerSearch.trim() !== "" &&
-                  !customerId
-                }
-                selectedCustomer={selectedCustomer}
+                customerName={customerName}
+                customerPhone={customerPhone}
+                onCustomerNameChange={setCustomerName}
+                onCustomerPhoneChange={setCustomerPhone}
               />
 
               <PaymentPanel
                 paymentMethod={paymentMethod}
-                paymentMethodLabel={paymentMethodLabel}
                 onSetPaymentMethod={setPaymentMethod}
                 totalMillieme={totalMillieme}
                 paidCashMillieme={paidCashMillieme}
                 paidCardMillieme={paidCardMillieme}
                 changeMillieme={changeMillieme}
+                remainingMillieme={remainingMillieme}
                 deferredRemainingMillieme={deferredRemainingMillieme}
-                projectedCustomerBalanceMillieme={
-                  projectedCustomerBalanceMillieme
-                }
                 onSetPaidCashAmount={(amount) =>
                   setPaidCashAmount(amount, {
                     manual: amount !== totalMillieme,

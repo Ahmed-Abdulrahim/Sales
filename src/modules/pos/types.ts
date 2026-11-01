@@ -3,6 +3,8 @@ export type PaymentMethod = "cash" | "card" | "deferred" | "split";
 export type CreateSaleInvoicePayload = {
   sessionId: number;
   customerId: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
   paymentMethod: PaymentMethod;
   globalDiscountMillieme: number;
   paidMillieme: number;

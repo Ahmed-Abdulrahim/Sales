@@ -23,7 +23,8 @@ type CartItemOverrides = {
 interface CartState {
   items: CartItem[];
   customerId: number | null;
-  customerName: string | null;
+  customerName: string;
+  customerPhone: string;
   globalDiscountMillieme: number;
   paymentMethod: "cash" | "card" | "deferred" | "split";
   paidCashMillieme: number;
@@ -35,13 +36,16 @@ interface CartState {
   totalDiscountMillieme: () => number;
   totalMillieme: () => number;
   changeMillieme: () => number;
+  remainingMillieme: () => number;
   addItem: (item: Item, overrides?: CartItemOverrides) => void;
   removeItem: (itemId: number) => void;
   updateQty: (itemId: number, qty: number) => void;
   updateLineDiscountPercent: (itemId: number, discountPercent: number) => void;
   updateLineUnitPrice: (itemId: number, unitPriceMillieme: number) => void;
   setGlobalDiscount: (discountMillieme: number) => void;
-  setCustomer: (id: number, name: string) => void;
+  setCustomer: (id: number | null, name: string) => void;
+  setCustomerName: (name: string) => void;
+  setCustomerPhone: (phone: string) => void;
   clearCustomer: () => void;
   setPaymentMethod: (method: CartState["paymentMethod"]) => void;
   setPaidCashAmount: (milliemes: number, options?: { manual?: boolean }) => void;
@@ -159,7 +163,8 @@ const toCartItem = (
 const initialCartState = {
   items: [],
   customerId: null,
-  customerName: null,
+  customerName: "",
+  customerPhone: "",
   globalDiscountMillieme: 0,
   paymentMethod: "cash" as const,
   paidCashMillieme: 0,
@@ -186,6 +191,8 @@ const createCartState: StateCreator<CartState> = (set, get) => ({
     get().paymentMethod === "cash"
       ? get().paidCashMillieme - get().totalMillieme()
       : 0,
+  remainingMillieme: () =>
+    Math.max(0, get().totalMillieme() - get().paidCashMillieme - get().paidCardMillieme),
   addItem: (item, overrides) => {
     set((state) => {
       const existingItem = state.items.find(
@@ -342,10 +349,17 @@ const createCartState: StateCreator<CartState> = (set, get) => ({
       customerName: name,
     });
   },
+  setCustomerName: (name) => {
+    set({ customerName: name });
+  },
+  setCustomerPhone: (phone) => {
+    set({ customerPhone: phone });
+  },
   clearCustomer: () => {
     set({
       customerId: null,
-      customerName: null,
+      customerName: "",
+      customerPhone: "",
     });
   },
   setPaymentMethod: (method) => {

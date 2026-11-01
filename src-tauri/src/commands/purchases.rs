@@ -13,6 +13,7 @@ use crate::{
         ItemPurchaseHistory, ItemBasePriceRow, LastItemPurchaseRow, ItemPurchaseStatsRow,
         UpdatePurchasePayload,
     },
+    models::item_with_supplier::ItemWithSupplier,
 };
 use crate::commands::{auth::SessionStore, guard};
 
@@ -703,6 +704,46 @@ pub async fn get_item_purchase_history(
     guard::require_role(&sessions, &pool, token, guard::ADMIN_OR_ACCOUNTANT).await?;
 
     get_item_purchase_history_impl(&pool, item_id).await
+}
+
+#[tauri::command]
+pub async fn search_items_for_purchase(
+    pool: State<'_, DbPool>,
+    sessions: State<'_, SessionStore>,
+    token: Option<String>,
+    query: Option<String>,
+) -> Result<Vec<crate::models::item_with_supplier::ItemWithSupplier>, AppError> {
+    guard::require_role(&sessions, &pool, token, guard::ANY_ROLE).await?;
+
+    let search = normalize_optional_string(query);
+    let mut sql = QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT
+          items.id,
+          items.name_ar,
+          items.buy_price_millieme,
+          items.sell_price_millieme,
+          items.current_stock,
+          items.unit,
+          items.supplier_id,
+          suppliers.name AS supplier_name
+        FROM items
+        LEFT JOIN suppliers ON suppliers.id = items.supplier_id
+        WHERE items.is_active = 1
+        "#,
+    );
+
+    if let Some(q) = search {
+        sql.push(" AND items.name_ar LIKE ");
+        sql.push_bind(format!("%{q}%"));
+    }
+
+    sql.push(" ORDER BY items.name_ar ASC LIMIT 100");
+
+    sql.build_query_as::<crate::models::item_with_supplier::ItemWithSupplier>()
+        .fetch_all(&*pool)
+        .await
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

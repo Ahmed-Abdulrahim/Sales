@@ -160,7 +160,8 @@ async fn list_invoices_impl(
           invoices.id,
           invoices.invoice_number,
           invoices.customer_id,
-          customers.name AS customer_name,
+          COALESCE(invoices.customer_name, customers.name) AS customer_name,
+          invoices.customer_phone,
           invoices.total_millieme,
           invoices.paid_millieme,
           invoices.payment_method,
@@ -190,8 +191,11 @@ async fn list_invoices_impl(
     }
 
     if let Some(customer_search) = normalize_optional_string(filters.customer_search) {
-        query.push(" AND customers.name LIKE ");
+        query.push(" AND (customers.name LIKE ");
         query.push_bind(format!("%{customer_search}%"));
+        query.push(" OR invoices.customer_name LIKE ");
+        query.push_bind(format!("%{customer_search}%"));
+        query.push(")");
     }
 
     if let Some(invoice_search) = normalize_optional_string(filters.invoice_search) {
@@ -242,7 +246,8 @@ async fn get_invoice_detail_impl(
           invoices.id,
           invoices.invoice_number,
           invoices.customer_id,
-          customers.name AS customer_name,
+          COALESCE(invoices.customer_name, customers.name) AS customer_name,
+          invoices.customer_phone,
           invoices.session_id,
           invoices.cashier_id,
                     users.name AS cashier_name,
@@ -600,12 +605,16 @@ async fn create_sale_invoice_impl_tx(
         payload.customer_id.is_some(),
     );
     let notes = normalize_optional_string(payload.notes);
+    let customer_name = normalize_optional_string(payload.customer_name);
+    let customer_phone = normalize_optional_string(payload.customer_phone);
 
     let result = sqlx::query(
         r#"
         INSERT INTO invoices (
           invoice_number,
           customer_id,
+          customer_name,
+          customer_phone,
           session_id,
           subtotal_millieme,
           discount_millieme,
@@ -616,11 +625,13 @@ async fn create_sale_invoice_impl_tx(
           status,
           notes
         )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&invoice_number)
     .bind(payload.customer_id)
+    .bind(&customer_name)
+    .bind(&customer_phone)
     .bind(payload.session_id)
     .bind(subtotal_millieme)
     .bind(payload.global_discount_millieme)
@@ -949,6 +960,39 @@ pub async fn create_return(
     create_return_impl(&pool, payload).await
 }
 
+#[tauri::command]
+pub async fn list_debts(
+    pool: State<'_, DbPool>,
+    sessions: State<'_, SessionStore>,
+    token: Option<String>,
+) -> Result<Vec<InvoiceSummary>, AppError> {
+    guard::require_role(&sessions, &pool, token, guard::ANY_ROLE).await?;
+
+    sqlx::query_as::<_, InvoiceSummary>(
+        r#"
+        SELECT
+          invoices.id,
+          invoices.invoice_number,
+          invoices.customer_id,
+          COALESCE(invoices.customer_name, customers.name) AS customer_name,
+          invoices.customer_phone,
+          invoices.total_millieme,
+          invoices.paid_millieme,
+          invoices.payment_method,
+          invoices.status,
+          invoices.created_at
+        FROM invoices
+        LEFT JOIN customers ON customers.id = invoices.customer_id
+        WHERE invoices.total_millieme > invoices.paid_millieme
+          AND invoices.status IN ('deferred', 'partial')
+        ORDER BY invoices.created_at DESC
+        "#,
+    )
+    .fetch_all(&*pool)
+    .await
+    .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1055,6 +1099,8 @@ mod tests {
         CreateSaleInvoicePayload {
             session_id,
             customer_id: None,
+            customer_name: None,
+            customer_phone: None,
             items,
             global_discount_millieme: 0,
             payment_method: "cash".to_owned(),
@@ -1373,6 +1419,8 @@ mod tests {
             CreateSaleInvoicePayload {
                 session_id: 999_999,
                 customer_id: None,
+                customer_name: None,
+                customer_phone: None,
                 items: vec![InvoiceItemPayload {
                     item_id,
                     qty: 1,

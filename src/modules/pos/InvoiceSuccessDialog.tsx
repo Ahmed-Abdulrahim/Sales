@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,6 +47,17 @@ export function InvoiceSuccessDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" showCloseButton={false}>
+        {/* Explicit close button */}
+        <button
+          type="button"
+          className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          onClick={() => onOpenChange(false)}
+          disabled={whatsappLoading}
+          aria-label="إغلاق"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
         <DialogHeader className="text-right">
           <DialogTitle>تم حفظ الفاتورة بنجاح ✓</DialogTitle>
           <DialogDescription>

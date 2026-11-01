@@ -22,6 +22,7 @@ pub struct InvoicePrintItem {
 pub struct InvoicePrintData {
     pub invoice_number: String,
     pub customer_name: Option<String>,
+    pub customer_phone: Option<String>,
     pub cashier_name: Option<String>,
     pub subtotal_millieme: i64,
     pub discount_millieme: i64,
